@@ -22,3 +22,4 @@ vllm-flash-attn!=2.5.9
 jupyterlab==4.2.0
 communex
 
+mysql-connector-python
