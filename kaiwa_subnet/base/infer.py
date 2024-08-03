@@ -17,6 +17,10 @@ from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_engine import LoRAModulePath
 from kaiwa_subnet.base.config import KaiwaBaseSettings
 
+def hash_string(s: str) -> str:
+    import hashlib
+    return hashlib.md5(s.encode()).hexdigest()
+
 
 class InferenceEngine(Module):
     def __init__(self, settings: KaiwaBaseSettings) -> None:
@@ -45,12 +49,64 @@ class InferenceEngine(Module):
             chat_template,
         )
 
+        import mysql.connector
+        # read user and password from a .env
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        user = os.getenv("MYSQL_USER")
+        password = os.getenv("MYSQL_PASSWORD")
+        print(f"Env: {os.getenv('MYSQL_HOST')}, {user}, {password}")
+        self.db = mysql.connector.connect(
+            host=os.getenv("MYSQL_HOST"),
+            user=user,
+            password=password,
+        )
+    
+    def check_exists(self, hashkey: str) -> bool:
+        cursor = self.db.cursor()
+        cursor.execute(f"SELECT * FROM quora_questions.questions WHERE hash = '{hashkey}'")
+        result =  cursor.fetchall()
+        if result and len(result) > 0:
+            return True, result[0][3]
+        return False, None
+
+    def update_response(self, hashkey: str, response: str) -> None:
+        cursor = self.db.cursor()
+        cursor.execute(f"UPDATE quora_questions.questions SET response = '{response}' WHERE hash = '{hashkey}'")
+        self.db.commit()
+        
     @endpoint
     async def chat(self, input: dict, timeout: int = 120) -> dict:
+        if not input.messages or not input.messages[0]["content"]:
+            return ErrorResponse(
+                error="Invalid input: messages must be a list with at least one non-empty message"
+            )
+        
+        hashkey = hash_string(input.messages[0]["content"])
+        print(f"Hashkey: {hashkey}")
+        exists, resp = self.check_exists(hashkey)
+        print(f"Exists: {exists} Response: {resp}")
+        if exists and resp:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": resp,
+                            "role": "assistant",
+                        }
+                    }
+                ]
+            }
+        
         resp = await self.openai_serving_chat.create_chat_completion(
             ChatCompletionRequest.model_validate(input)
         )
         data = resp.model_dump()
+        
+        self.update_response(hashkey, data["choices"][0]["message"]["content"])
+        print(f"Updated response for hashkey: {hashkey}")
         logger.debug(data)
         return data
 
