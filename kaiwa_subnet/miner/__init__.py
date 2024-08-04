@@ -11,12 +11,13 @@ from communex._common import get_node_url
 from kaiwa_subnet.miner._config import MinerSettings
 from kaiwa_subnet.base.utils import get_netuid
 from kaiwa_subnet.base.infer import InferenceEngine
+from kaiwa_subnet.base.infer_v2 import InferenceEngineV2
 import sys
 
 from loguru import logger
 
 
-class Miner(InferenceEngine):
+class Miner(InferenceEngineV2):
     def __init__(self, key: Keypair, settings: MinerSettings = None) -> None:
         super().__init__(settings=settings)
         self.settings = settings or MinerSettings()
